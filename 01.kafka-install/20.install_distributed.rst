@@ -1,0 +1,175 @@
+多节点环境安装
+================================================
+
+多节点kafka集群由一套多节点ZooKeeper集群和一套多节点Kafka集群组成。为搭建多节点Kafka集群，我们需要一次执行如下操作:
+ - 安装Java（略）
+ - 安装多节点ZooKeeper集群
+ - 安装多节点Kafka集群
+
+ .. image:: ./image/kafka_distributed.jpg
+
+安装多节点Zookeeper集群
+--------------------------------------
+Kafka强依赖ZooKeeper，因此生产环境中一个高可用、高可靠的ZooKeeper是必不可少的。ZooKeeper集群通常被称作一个ensemble。
+只要这个ensemble中的大多数节点存活，那么Zookeeper集群就能正常提供服务。显然，既然是大多数，那么最好使用奇数过服务器，即
+2n + 1个服务器，这样整个ZooKeeper集群最多可以容忍n台服务器宕机而依然提供服务。如果使用偶数个则通常会浪费一台服务器资源。
+
+1.下载Zookeeper安装包::
+
+    wget https://downloads.apache.org/zookeeper/zookeeper-3.6.0/apache-zookeeper-3.6.0-bin.tar.gz
+
+2.解压::
+
+    tar -zxvf apache-zookeeper-3.6.0-bin.tar.gz
+
+3.创建Zookeeper系统快照目录::
+
+    mkdir data_dir1
+    mkdir data_dir2
+    mkdir data_dir3
+
+3.zoo.cfg配置文件说明::
+
+    # 添加一下配置
+    tickTime=2000 # ZooKeeper最小时间单位，用于丈量心跳时间和超时时间。通常设置成默认2秒即可
+    initLimit=10  # 指定follower节点初始时连接leader节点的最大tick次数。假设5，表示follower必须在5 * tickTime连接上leader，否则将视为超时
+    syncLimit=5   # 设定follower节点与leader节点进行同步的最大时间
+    dataDir=/home/aim/programe/kafka/zookeeper/data_dir # 非常重要的参数！ZooKeeper会在内存中保存系统快照，并定期写入该路径指定的文件夹
+    clientPort=2181 # Zookeeper监听客户端连接的端口
+    server.1=zk1:2888:3888 # 格式为server.X=host:port:port X必须是全局唯一的数字，且需与myid文件中的数字相对应。一般设置X值为1～255之间的整数，后面两个端口，第一个用于follower节点连接leader节点，第二个端口则用于leader选举
+    server.2=zk2:2888:3888
+    server.3=zk3:2888:3888
+
+4.创建三个配置文件添加相应配置::
+
+    cd apache-zookeeper-3.6.0-bin/conf
+    cp zoo_sample.cfg zoo_sample1.cfg
+    cp zoo_sample.cfg zoo_sample2.cfg
+    cp zoo_sample.cfg zoo_sample3.cfg
+
+    vim zoo_sample1.cfg
+
+    # 添加以下配置
+    tickTime=2000
+    initLimit=10
+    syncLimit=5
+    dataDir=/home/aim/programe/kafka/zookeeper/data_dir1
+    clientPort=2181
+    server.1=zk1:2888:3888
+    server.2=zk2:2889:3889
+    server.3=zk3:2890:3890
+
+    vim zoo_sample2.cfg
+
+    # 添加以下配置
+    tickTime=2000
+    initLimit=10
+    syncLimit=5
+    dataDir=/home/aim/programe/kafka/zookeeper/data_dir2
+    clientPort=2182
+    server.1=zk1:2888:3888
+    server.2=zk2:2889:3889
+    server.3=zk3:2890:3890
+
+    vim zoo_sample2.cfg
+
+    # 添加以下配置
+    tickTime=2000
+    initLimit=10
+    syncLimit=5
+    dataDir=/home/aim/programe/kafka/zookeeper/data_dir3
+    clientPort=2183
+    server.1=zk1:2888:3888
+    server.2=zk2:2889:3889
+    server.3=zk3:2890:3890
+
+5.创建myid文件,myid文件必须位于配置文件中dataDir中::
+
+    echo "1" > ../../data_dir1/myid
+    echo "2" > ../../data_dir2/myid
+    echo "2" > ../../data_dir3/myid
+
+6.启动ZooKeeper::
+
+    cd ../../apache-zookeeper-3.6.0-bin/
+    nohup bin/zkServer.sh start conf/zoo_sample1.cfg > ../zookeeper_log1/zookeeper_log.log &
+    nohup bin/zkServer.sh start conf/zoo_sample2.cfg > ../zookeeper_log2/zookeeper_log.log &
+    nohup bin/zkServer.sh start conf/zoo_sample3.cfg > ../zookeeper_log3/zookeeper_log.log &
+
+7.检查整个集群状态::
+
+    bin/zkServer.sh status conf/zoo_sample1.cfg
+    bin/zkServer.sh status conf/zoo_sample2.cfg
+    bin/zkServer.sh status conf/zoo_sample3.cfg
+
+安装多节点Kafka集群
+--------------------------------------
+
+1.下载Kafka安装包::
+
+    wget https://mirrors.tuna.tsinghua.edu.cn/apache/kafka/2.5.0/kafka_2.13-2.5.0.tgz
+
+2.解压::
+
+    tar -zxvf kafka_2.13-2.5.0.tgz
+
+4.创建日志存储文件::
+
+    mkdir -p log/kafka1
+    mkdir -p log/kafka2
+    mkdir -p log/kafka3
+
+4.复制配置文件::
+
+    cd kafka_2.13-2.5.0
+    cp config/server.properties config/server1.properties
+    cp config/server.properties config/server2.properties
+    cp config/server.properties config/server3.properties
+
+4.修改配置文件::
+
+    vim config/server1.properties
+
+    # 添加以下配置
+    broker.id=0 # 整个集群中唯一
+    listeners=PLAINTEXT://192.168.1.9:9092 # 配置listeners最好使用节点的FQDN即全称域名，尽量不要使用IP地址
+    log.dirs=/home/aim/programe/kafka/kafka/log/kafka1 #日志
+    num.partitions=4 # topic 分区数，根据具体情况给
+    offsets.topic.replication.factor=3 # topic 副本数
+    zookeeper.connect=192.168.1.9:2181,192.168.1.9:2182,192.168.1.9:2183 # zookeeper地址
+    delete.topic.enable=true # 允许删除topic
+    unclean.leader.election.enable=false
+
+    vim config/server2.properties
+
+    # 添加以下配置
+    broker.id=1 # 整个集群中唯一
+    listeners=PLAINTEXT://192.168.1.9:9093 # 配置listeners最好使用节点的FQDN即全称域名，尽量不要使用IP地址
+    log.dirs=/home/aim/programe/kafka/kafka/log/kafka2 #日志
+    num.partitions=4 # 分区数，根据具体情况给
+    offsets.topic.replication.factor=3 # topic 副本数
+    zookeeper.connect=192.168.1.9:2181,192.168.1.9:2182,192.168.1.9:2183 # zookeeper地址
+    delete.topic.enable=true # 允许删除topic
+    unclean.leader.election.enable=false
+
+    vim config/server3.properties
+
+    # 添加以下配置
+    broker.id=2 # 整个集群中唯一
+    listeners=PLAINTEXT://192.168.1.9:9094 # 配置listeners最好使用节点的FQDN即全称域名，尽量不要使用IP地址
+    log.dirs=/home/aim/programe/kafka/kafka/log/kafka3 #日志
+    num.partitions=4 # 分区数，根据具体情况给
+    offsets.topic.replication.factor=3 # topic 副本数
+    zookeeper.connect=192.168.1.9:2181,192.168.1.9:2182,192.168.1.9:2183 # zookeeper地址
+    delete.topic.enable=true # 允许删除topic
+    unclean.leader.election.enable=false
+
+5.启动kafka::
+
+    bin/kafka-server-start.sh -daemon config/server1.properties
+    bin/kafka-server-start.sh -daemon config/server2.properties
+    bin/kafka-server-start.sh -daemon config/server3.properties
+
+7.检查启动情况::
+
+    jps |grep Kafka

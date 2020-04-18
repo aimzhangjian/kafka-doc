@@ -1,0 +1,43 @@
+JVM参数
+================================================
+
+Kafka broker端代码虽然使用Scala语言编写，但需要编译为.class文件在JVM上运行。垃圾回收参数的设置显得非常重要
+
+Java 7垃圾收集器选择法则:
+
+ - 如果用户机器上CPU资源充裕，那么推荐使用CMS收集器。可以充分利用多CPU执行并行垃圾收集。启用方法为-XX:+UseCurrentMarkSweepGC
+
+ - 如果CPU资源不够充裕，则可以考虑使用吞吐量收集器，即throughput collector。这样不会占用紧张的CPU资源，使Kafka broker达到最大
+ 的吞吐量。启用方法-XX:+UseParallelGC
+
+Java 8垃圾收集器选择:
+
+ - 推荐使用G1垃圾收集器。在没有任何调优的情况下，G1收集器本身会比CMS表现出更好的性能，主要体现在Full GC次数更少、需要微调的参数更
+ 少等/
+
+Kafka主要使用堆外内存，即大量使用操作系统页缓存，因此并不需要为JVM分配太多内存。实际使用中，通常为broker设置不超过6GB的堆空间,以下为
+一份典型的生产环境中JVM参数列表::
+
+    -Xmx6g -xms6g -XX:MetaspaceSize=96m -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35
+    -XX:G1HeapRegionSize=16M -XX:MinMetaspaceFreeRation=50 -XX:MaxMetaspaceFreeRation=80
+
+OS参数
+================================================
+
+kafka并不需要太多的OS级别参数调优，但依然有一些OS参数是必须要调整的:
+
+ - 文件描述符限制: Kafka会频繁地创建并修改文件系统中的文件，这包括消息的日志文件、索引文件以及各种元数据管理文件等。如果一个broker
+ 上有多个topic的分区，那么这个broker势必需要打开多个文件（大约等于分区数 * （分区总大小/日志段大小）* 3）。例，一个broker上保存
+ 50个分区，每个分区平均尺寸是10GB，每个日志段大小为1GB，那么这个broker需要维护1500个左右的文件描述符。设置方法ulimit -n 100000
+
+ - Socket缓冲区大小: 这里指的是OS级别的Socket缓冲区大小，而非Kafka自己提供的Socket缓冲区参数。事实上，Kafka自己的参数设置为64KB，
+ 对于普通内存环境而言是足够的，因为内网环境下往返时间一般很低，不会产生过多的数据堆积在Socket缓冲区。但对于那些跨地区的数据传输而言，仅
+ 增加Kafka参数是不够的，做远距离数据传输，建议将OS级Socket缓冲区调大，比如增加到128KB
+
+ - 最好使用Ext4或XFS文件系统: Kafka操作的都是普通文件，并不依赖于特定的文件系统，但依然推荐使用Ext4或XFS文件系统，特别是XFS有着更高
+ 的性能。这种性能主要影响Kafka的写入性能
+
+ - 关闭swap: 这是很多使用磁盘的应用程序的常规优化手段，具体命令为sysctlvm.swappiness=<一个较小的数>
+
+ - 设置更长的flush时间: Kafka依赖OS页缓存的"刷盘"功能实现消息真正写入物理磁盘，默认的刷盘间隔是5秒。通常情况下，这个间隔太短，适当
+ 增加该值可以很大程度上提升OS物理写入操作性能。LinkedIn公司将该值设置为2分钟增加整体的物理写入吞吐量

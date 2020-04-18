@@ -1,0 +1,47 @@
+broker端参数
+================================================
+
+broker端参数需要在kafka目录下config/server.properties文件中进行设置:
+
+ - broker.id: kafka使用唯一的一个整数来标识每个broker。该参数默认值-1。如果不指定，kafka会自动生成一个唯一值
+
+ - log.dirs: 非常重要的参数！该参数指定kafka持久化消息的目录。如果待持久化的消息数量非常多，最好确保该文件下有充足的磁盘空间，
+ 该参数可以设置多个目录，以逗号分隔。实际使用中指定多个目录是被推荐的，Kafka可以负载均衡的使用多个目录。若机器上有N块物理内存，
+ N个磁头同时执行写操作，可以极大的提高吞吐量。默认使用/tmp/kafka-logs作为消息保存目录,极其不可取
+
+ - zookeeper.connect: 非常重要参数。该参数指定zookeeper集群，可以是一个CSV列表
+
+ - listeners: broker监听器的CSV列表，格式为[协议]://[主机名]:[端口],[协议]://[主机名]:[端口]。该参数主要用于客户端连接broker使用。
+ 不指定主机名，表示绑定默认网卡；如果主机名为0.0.0.0，则表示监听所有网卡。支持协议类型包括PLAINTEXT、SSL及SASL_SSL等
+
+ - advertised.listeners: 和listeners类似，该参数也是用于发布给clients的监听器，不过该参数主要用于IaaS环境，比如云上的
+ 主机通常配有多块网卡（私有网卡和公网网卡）。对于这种机器，用户可以设置该参数绑定公网IP供外部clients使用，配置listeners绑定
+ 私网IP供broker间通信
+
+ - unclean.leader.election.enable: 是否开启unclean leader选举。在1.0.0版本之前默认值是true，之后调整为false，表示当
+ leader宕机，而ISR中的副本为空，Kafka不允许从剩下存活的非ISR副本中选择一个当leader；如果为true，固然可以让Kafka继续题哦功能
+ 服务给clients，但会造成消息数据的丢失
+
+ - delete.topic.enable: 是否允许Kafka删除topic。默认情况下，Kafka集群允许用户删除topic及其数据。在实际生产环境中允许删除
+ topic其实是一个很方便的功能。因此设置为true是推荐的做法
+
+ - log.retention.{hours|minutes|ms}: 控制消息数据留存时间。同时设置三个时间，优先选取ms的设置，minutes次之，hours最后。
+ 默认留存时间是7天，即Kafka只会保留最近7天的数据，并自动删除7天前的数据
+
+ - log.retention.bytes: 指定每个消息日志空间维度的留存策略，控制Kafka集群需要为每个消息日志保存多大的数据。对于大小超过该参数
+ 的分区日志而言，Kafka会自动清理该分区的日志段文件
+
+ - min.insync.replicas: 该参数与producer段的acks参数配合使用。acks=-1表示producer端寻求最高等级持久化保证，而min.insync.replicas
+ 也只有在acks=-1时才有意义。它指定了broker端必须成功响应clients消息发送的最少副本数。假定broker端无法满足该条件，则clients的
+ 消息发送并不会被视为成功。如果期望被发送的消息成功写入所有副本则可设置该参数为-1。假设某个topic的每个分区副本数是3，推荐设置该参数
+ 为2，允许一台broker宕机，如果为3则一台broker宕机，集群将不能继续提供服务。用户需要在高可用与一致性之间取得平衡
+
+ - num.network.threads: 一个非常重要的参数。它控制一个broker在后台用于处理网络请求的线程数，默认是3。通常情况下，broker启动时
+ 会创建多个线程处理来自其他broker和clients发送过来的各种请求。这里的处理只是负责转发请求，他会将接收到的请求转发到后面的处理线程
+ 真实环境中，用户需要不断的监控NetworkProcessorAvgIdlePercent JMX指标，如果指标持续低于0.3，建议适当的增加该参数值
+
+ - num.io.thread: 该参数控制broker端实际处理网络请求的线程数，默认值是8，即Kafka broker默认创建8个线程以轮询方式不停地监听
+ 转发过来的网络请求并进行实时处理。Kafka提供了一个JMX监控指标RequestHandlerAvgIdlePercent，如果该指标持续低于0.3，则可以考虑
+ 适当增加该参数
+
+ - message.max.bytes: Kafka broker能接收的最大消息大小，默认977KB。用户需综合考虑最大消息尺寸设置该参数

@@ -1,0 +1,10 @@
+topic参数
+================================================
+
+topic级别参数，针对各个topic指定不同的配置:
+
+ - delete.retention.ms: 每个topic可以设置自己的日志留存时间覆盖全局默认值
+
+ - max.message.bytes: 覆盖全局message.max.bytes,即为每个topic指定不同的最大消息尺寸
+
+ - retention.bytes: 覆盖全局的log.retention.bytes，每个topic设置不同的日志留存尺寸
